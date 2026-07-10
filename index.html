@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cody | Live Axie Stats</title>
+    <title>All Accounts | Live Axie Stats</title>
     <style>
         :root {
             --bg-color: #0f172a;
             --card-bg: #1e293b;
+            --block-bg: #111827;
             --text-main: #f8fafc;
             --text-sub: #94a3b8;
             --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
             --success: #10b981;
             --danger: #ef4444;
         }
@@ -20,7 +22,7 @@
             color: var(--text-main);
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
             margin: 0;
             padding: 20px;
@@ -32,20 +34,80 @@
             border-radius: 15px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.5);
             width: 100%;
-            max-width: 600px;
+            max-width: 1100px; /* Mở rộng chiều rộng để chứa nhiều ví song song */
         }
         .header {
-            text-align: center;
-            margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
             border-bottom: 1px solid #334155;
             padding-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 15px;
         }
-        .header h1 { margin: 0; color: var(--accent); }
-        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-        .card { background-color: #334155; padding: 1.5rem; border-radius: 10px; text-align: center; }
+        .header h1 { margin: 0; color: var(--accent); font-size: 1.8rem; }
+        
+        .refresh-btn {
+            background-color: var(--accent);
+            color: #0f172a;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .refresh-btn:hover { background-color: var(--accent-hover); }
+        .refresh-btn:disabled {
+            background-color: #475569;
+            color: var(--text-sub);
+            cursor: not-allowed;
+        }
+
+        .status-text { text-align: center; color: var(--text-sub); font-size: 0.9rem; margin-bottom: 1.5rem; }
+        
+        /* Khu vực lưới chứa các tài khoản */
+        .accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+        }
+        
+        /* Khung lớn bọc từng tài khoản */
+        .account-block {
+            background-color: var(--block-bg);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid #334155;
+        }
+        .account-block.error-block {
+            border-color: var(--danger);
+            background-color: rgba(239, 68, 68, 0.05);
+            text-align: center;
+        }
+        .account-title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: var(--accent);
+            margin-bottom: 2px;
+        }
+        .account-wallet {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: var(--text-sub);
+            margin-bottom: 1.5rem;
+            word-break: break-all;
+        }
+
+        /* Lưới thông số nhỏ bên trong mỗi tài khoản */
+        .stats-subgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        .card { background-color: #243147; padding: 1rem; border-radius: 8px; text-align: center; }
         .card.full { grid-column: span 2; background-color: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); }
-        .card h3 { margin: 0 0 0.5rem 0; color: var(--text-sub); font-size: 0.9rem; text-transform: uppercase; }
-        .value { font-size: 1.8rem; font-weight: bold; }
+        .card h3 { margin: 0 0 0.4rem 0; color: var(--text-sub); font-size: 0.8rem; text-transform: uppercase; }
+        .value { font-size: 1.5rem; font-weight: bold; }
+        
         .loading { text-align: center; color: var(--accent); font-size: 1.2rem; padding: 2rem; }
         .error { text-align: center; color: var(--danger); font-size: 1.2rem; padding: 1rem; }
         .debug-box {
@@ -59,7 +121,7 @@
             margin-top: 15px;
             white-space: pre-wrap;
             word-break: break-all;
-            max-height: 150px;
+            max-height: 120px;
             overflow-y: auto;
         }
     </style>
@@ -68,142 +130,198 @@
 
 <div class="dashboard">
     <div class="header">
-        <h1>Tài khoản: Cody</h1>
-        <p id="update-status">Đang thiết lập kết nối an toàn...</p>
+        <h1>Bảng giám sát Axie Multi-Live</h1>
+        <button id="refresh-btn" class="refresh-btn">🔄 Làm mới tất cả</button>
     </div>
+
+    <div id="update-status" class="status-text">Đang chuẩn bị...</div>
     
-    <div id="loading-state" class="loading">🔄 Đang đồng bộ dữ liệu live từ mạng lưới...</div>
+    <div id="loading-state" class="loading">🔄 Đang tải dữ liệu chuỗi khối live cho toàn bộ ví...</div>
     
     <div id="error-state" class="error" style="display: none;">
-        <div>❌ Gặp sự cố khi đồng bộ dữ liệu live.</div>
+        <div>❌ Không thể kết nối với cổng dữ liệu API.</div>
         <div class="debug-box" id="debug-log">Nhật ký lỗi hệ thống:</div>
     </div>
 
-    <div class="grid" id="stats-grid" style="display: none;">
-        <div class="card">
-            <h3>Thứ hạng (Rank)</h3>
-            <div class="value" id="rank-val">-</div>
-        </div>
-        <div class="card">
-            <h3>Axie Score</h3>
-            <div class="value" id="score-val">-</div>
-        </div>
-        <div class="card">
-            <h3>Bounty Point</h3>
-            <div class="value" id="bounty-val">-</div>
-        </div>
-        <div class="card">
-            <h3>bAXS Reward</h3>
-            <div class="value" id="baxs-val" style="color: #f59e0b;">-</div>
-        </div>
-        <div class="card full">
-            <h3>Dự kiến nhận về</h3>
-            <div class="value" id="axs-val" style="color: var(--success);">- AXS</div>
-        </div>
-    </div>
+    <!-- Nơi dữ liệu của Cody và Crystie tự động đổ vào song song nhau -->
+    <div class="accounts-grid" id="accounts-container"></div>
 </div>
 
 <script>
     const REAL_API = "https://axie-bald.vercel.app/api/getPBB";
-    const TARGET_WALLET = "0x9b3bc1c03e5a8889e893e54950a7c31c11301b79".toLowerCase();
+    
+    // Khai báo danh sách ví tại đây, sau này muốn thêm ví thứ 3, 4 chỉ việc copy thêm dòng vào mảng này
+    const ACCOUNTS = [
+        { name: "Cody", wallet: "0x9b3bc1c03e5a8889e893e54950a7c31c11301b79" },
+        { name: "Crystie", wallet: "0xe9add5b325d2b7f869b3a3c7b1047600a76192f7" }
+    ];
     
     let logs = [];
+    let cachedRawData = null;
+
     function logDebug(msg) {
         console.log(msg);
         logs.push(msg);
         document.getElementById('debug-log').innerText = "Nhật ký hệ thống:\n" + logs.join("\n");
     }
 
-    // Thuật toán quét đệ quy sâu - tự động tìm ra object chứa ví của bạn ở bất kỳ cấu trúc nào
-    function findCodyDeep(obj) {
+    // Thuật toán quét đệ quy sâu tìm ví
+    function findWalletDeep(obj, targetWallet) {
         if (!obj || typeof obj !== 'object') return null;
         
-        // Nếu tìm thấy Object có key 'user' khớp chính xác với ví của bạn
-        if (obj.user && String(obj.user).toLowerCase() === TARGET_WALLET) {
+        if (obj.user && String(obj.user).toLowerCase() === targetWallet.toLowerCase()) {
             return obj;
         }
         
-        // Nếu không, tiếp tục đào sâu xuống các nhánh con (mảng hoặc object con)
         for (let key in obj) {
             if (obj.hasOwnProperty(key)) {
-                const found = findCodyDeep(obj[key]);
+                const found = findWalletDeep(obj[key], targetWallet);
                 if (found) return found;
             }
         }
         return null;
     }
 
-    // Thử nghiệm tải dữ liệu thông qua nhiều giải pháp kết nối khác nhau
-    async function tryFetchData() {
-        // Danh sách các cổng kết nối (Thử kết nối trực tiếp -> Proxy 1 -> Proxy 2 -> Proxy 3)
+    // Tải dữ liệu qua các lớp Proxy dự phòng
+    async function fetchRawDataWithFallback() {
         const connectionEndpoints = [
-            { name: "Direct (Kết nối trực tiếp)", url: REAL_API },
-            { name: "Proxy 1 (Corsproxy.io)", url: "https://corsproxy.io/?" + encodeURIComponent(REAL_API) },
-            { name: "Proxy 2 (AllOrigins)", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` },
-            { name: "Proxy 3 (CodeTabs)", url: `https://api.codetabs.com/v1/proxy/?url=${encodeURIComponent(REAL_API)}` }
+            { name: "Direct", url: REAL_API },
+            { name: "Proxy 1", url: "https://corsproxy.io/?" + encodeURIComponent(REAL_API) },
+            { name: "Proxy 2", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` },
+            { name: "Proxy 3", url: `https://api.codetabs.com/v1/proxy/?url=${encodeURIComponent(REAL_API)}` }
         ];
 
         for (let endpoint of connectionEndpoints) {
             try {
-                logDebug(`Đang thử kênh: ${endpoint.name}...`);
+                logDebug(`Đang quét qua cổng: ${endpoint.name}...`);
                 const response = await fetch(endpoint.url);
-                if (!response.ok) throw new Error(`HTTP status ${response.status}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 
-                const rawData = await response.json();
-                logDebug(`✓ Kênh ${endpoint.name} phản hồi thành công! Đang phân tích dữ liệu...`);
-                
-                const playerData = findCodyDeep(rawData);
-                if (playerData) {
-                    return playerData; // Trả về ngay khi tìm thấy dữ liệu Cody
-                } else {
-                    logDebug(`⚠ Đọc được dữ liệu từ kênh này nhưng không tìm thấy ví ${TARGET_WALLET} bên trong.`);
-                }
+                const data = await response.json();
+                logDebug(`✓ Cổng ${endpoint.name} phản hồi thành công.`);
+                return data; 
             } catch (err) {
-                logDebug(`✗ Kênh ${endpoint.name} thất bại: ${err.message}`);
+                logDebug(`✗ Cổng ${endpoint.name} báo lỗi: ${err.message}`);
             }
         }
-        return null; // Thất bại toàn tập
+        return null;
     }
 
-    async function initDashboard() {
-        const playerData = await tryFetchData();
+    // Hàm dựng giao diện đồng thời cho toàn bộ tài khoản
+    function renderAllAccounts() {
+        if (!cachedRawData) return;
 
-        if (playerData) {
-            logDebug("✓ Đang ánh xạ dữ liệu lên bảng điều khiển...");
-            
-            // Ép cấu trúc chuẩn theo dữ liệu JSON thực tế bạn cung cấp
-            const rank = playerData.rank || "N/A";
-            const bountyPoint = playerData.score || "0"; 
-            const axieScore = playerData.userProfile?.settings?.axieEcosystemStats?.axieScore || "0";
-            
-            // Xử lý phần thưởng bAXS & AXS ước tính
-            let baxs = 4.28; // Giá trị cơ sở mặc định từ tài khoản của bạn để phòng hờ API chưa cập nhật mảng thưởng
-            if (playerData.details && playerData.details.totalBaxs) {
-                baxs = playerData.details.totalBaxs;
+        const container = document.getElementById('accounts-container');
+        container.innerHTML = ''; // Làm sạch màn hình cũ
+        
+        let validAccountsRendered = 0;
+
+        ACCOUNTS.forEach(acc => {
+            const playerData = findWalletDeep(cachedRawData, acc.wallet);
+
+            if (playerData) {
+                validAccountsRendered++;
+                
+                const rank = playerData.rank || "N/A";
+                const bountyPoint = playerData.score || "0"; 
+                const axieScore = playerData.userProfile?.settings?.axieEcosystemStats?.axieScore || "0";
+                
+                // Cơ chế tính toán phần thưởng bAXS an toàn
+                let baxs = 0;
+                if (playerData.details && playerData.details.totalBaxs) {
+                    baxs = playerData.details.totalBaxs;
+                } else if (acc.name === "Cody") {
+                    baxs = 4.28; // Giữ số liệu cơ sở cố định cho ví Cody nếu mảng thưởng API tạm rỗng
+                }
+                const axs = (baxs / 2.5).toFixed(2);
+
+                // Tạo chuỗi HTML cho khối tài khoản này
+                const blockHtml = `
+                    <div class="account-block">
+                        <div class="account-title">Tài khoản: ${acc.name}</div>
+                        <div class="account-wallet">${acc.wallet}</div>
+                        
+                        <div class="stats-subgrid">
+                            <div class="card">
+                                <h3>Thứ hạng (Rank)</h3>
+                                <div class="value">#${rank}</div>
+                            </div>
+                            <div class="card">
+                                <h3>Axie Score</h3>
+                                <div class="value">${axieScore}</div>
+                            </div>
+                            <div class="card">
+                                <h3>Bounty Point</h3>
+                                <div class="value">${bountyPoint}</div>
+                            </div>
+                            <div class="card">
+                                <h3>bAXS Reward</h3>
+                                <div class="value" style="color: #f59e0b;">${parseFloat(baxs).toFixed(2)}</div>
+                            </div>
+                            <div class="card full">
+                                <h3>Dự kiến nhận về</h3>
+                                <div class="value" style="color: var(--success);">${axs} AXS</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += blockHtml;
+            } else {
+                logDebug(`⚠ API trả về thành công nhưng không tìm thấy dữ liệu cho ví của ${acc.name}`);
+                container.innerHTML += `
+                    <div class="account-block error-block">
+                        <div class="account-title" style="color: var(--danger)">Tài khoản: ${acc.name}</div>
+                        <div class="account-wallet">${acc.wallet}</div>
+                        <div style="font-weight: bold; margin-top: 1rem;">❌ Ví chưa kích hoạt hoặc không có trong danh sách API</div>
+                    </div>
+                `;
             }
-            const axs = (baxs / 2.5).toFixed(2);
+        });
 
-            // Đổ vào giao diện HTML
-            document.getElementById('rank-val').innerText = `#${rank}`;
-            document.getElementById('score-val').innerText = axieScore;
-            document.getElementById('bounty-val').innerText = bountyPoint;
-            document.getElementById('baxs-val').innerText = parseFloat(baxs).toFixed(2);
-            document.getElementById('axs-val').innerText = `${axs} AXS`;
-
-            // Thay đổi trạng thái hiển thị trên màn hình
-            document.getElementById('loading-state').style.display = 'none';
-            document.getElementById('stats-grid').style.display = 'grid';
-            document.getElementById('update-status').innerText = "Đã đồng bộ Live dữ liệu ✓";
+        // Tắt trạng thái Loading
+        document.getElementById('loading-state').style.display = 'none';
+        
+        if (validAccountsRendered > 0) {
+            document.getElementById('update-status').innerText = `Đã cập nhật đồng bộ ${validAccountsRendered}/${ACCOUNTS.length} ví ✓`;
         } else {
-            logDebug("❌ LỖI HỆ THỐNG: Tất cả các kênh kết nối đều thất bại hoặc không tìm thấy thông tin ví.");
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('update-status').innerText = "Không trích xuất được thông tin ví nào.";
+        }
+    }
+
+    // Tiến trình điều khiển tổng
+    async function updateDashboard(isRefreshAction = false) {
+        const refreshBtn = document.getElementById('refresh-btn');
+        refreshBtn.disabled = true;
+        
+        document.getElementById('loading-state').style.display = 'block';
+        document.getElementById('error-state').style.display = 'none';
+        document.getElementById('update-status').innerText = "Đang kéo dữ liệu từ chuỗi khối...";
+
+        if (isRefreshAction) {
+            logs = []; 
+            logDebug("Kích hoạt lệnh làm mới toàn hệ thống...");
+        }
+
+        cachedRawData = await fetchRawDataWithFallback();
+
+        if (cachedRawData) {
+            renderAllAccounts();
+        } else {
+            logDebug("❌ LỖI KẾT NỐI: Toàn bộ cổng kết nối hoặc Proxy đều không thể lấy được file JSON.");
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('error-state').style.display = 'block';
-            document.getElementById('update-status').innerText = "Đồng bộ thất bại.";
+            document.getElementById('update-status').innerText = "Kết nối thất bại.";
         }
+        
+        refreshBtn.disabled = false;
     }
 
-    // Khởi chạy hệ thống khi tải trang
-    initDashboard();
+    // Gắn sự kiện click cho nút làm mới dữ liệu
+    document.getElementById('refresh-btn').addEventListener('click', () => updateDashboard(true));
+
+    // Lệnh kích hoạt chạy ngầm ngay khi tải trang
+    updateDashboard(false);
 </script>
 
 </body>
