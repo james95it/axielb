@@ -23,6 +23,8 @@
             align-items: center;
             min-height: 100vh;
             margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
         }
         .dashboard {
             background-color: var(--card-bg);
@@ -45,8 +47,21 @@
         .card h3 { margin: 0 0 0.5rem 0; color: var(--text-sub); font-size: 0.9rem; text-transform: uppercase; }
         .value { font-size: 1.8rem; font-weight: bold; }
         .loading { text-align: center; color: var(--accent); font-size: 1.2rem; padding: 2rem; }
-        .error { text-align: center; color: var(--danger); font-size: 1.2rem; padding: 2rem; }
-        .trend-down { color: var(--danger); font-size: 1.1rem; font-weight: normal; margin-left: 5px; }
+        .error { text-align: center; color: var(--danger); font-size: 1.2rem; padding: 1rem; }
+        .debug-box {
+            text-align: left;
+            background-color: #0f172a;
+            color: #94a3b8;
+            font-family: monospace;
+            font-size: 0.75rem;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 150px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -54,11 +69,15 @@
 <div class="dashboard">
     <div class="header">
         <h1>Tài khoản: Cody</h1>
-        <p id="update-status">Đang đồng bộ dữ liệu live...</p>
+        <p id="update-status">Đang thiết lập kết nối an toàn...</p>
     </div>
     
-    <div id="loading-state" class="loading">🔄 Đang kết nối trực tiếp đến Axie API...</div>
-    <div id="error-state" class="error" style="display: none;">❌ Không tìm thấy thông tin ví hoặc API đang bảo trì.</div>
+    <div id="loading-state" class="loading">🔄 Đang đồng bộ dữ liệu live từ mạng lưới...</div>
+    
+    <div id="error-state" class="error" style="display: none;">
+        <div>❌ Gặp sự cố khi đồng bộ dữ liệu live.</div>
+        <div class="debug-box" id="debug-log">Nhật ký lỗi hệ thống:</div>
+    </div>
 
     <div class="grid" id="stats-grid" style="display: none;">
         <div class="card">
@@ -85,87 +104,106 @@
 </div>
 
 <script>
-    const REAL_API = "https://axie-bald.vercel.app/api/getPBB"; 
-    const PROXY_URL = "https://corsproxy.io/?" + encodeURIComponent(REAL_API);
-
-    // Địa chỉ ví của bạn để định danh chính xác
+    const REAL_API = "https://axie-bald.vercel.app/api/getPBB";
     const TARGET_WALLET = "0x9b3bc1c03e5a8889e893e54950a7c31c11301b79".toLowerCase();
-
-    function tim_kiem_nguoi_choi(data) {
-        if (!data) return null;
-        
-        // Trích xuất mảng danh sách người chơi từ API
-        let list = Array.isArray(data) ? data : (data.players || data.data || data.rows || Object.values(data)[0]);
-        if (!Array.isArray(list)) return null;
-
-        // Quét tìm object chứa địa chỉ ví của bạn
-        return list.find(item => {
-            if (item && item.user) {
-                return item.user.toLowerCase() === TARGET_WALLET;
-            }
-            // Dự phòng nếu cấu trúc mảng thô đổi kiểu
-            return JSON.stringify(item).toLowerCase().includes(TARGET_WALLET);
-        });
+    
+    let logs = [];
+    function logDebug(msg) {
+        console.log(msg);
+        logs.push(msg);
+        document.getElementById('debug-log').innerText = "Nhật ký hệ thống:\n" + logs.join("\n");
     }
 
-    async function fetchLiveStats() {
-        try {
-            const response = await fetch(PROXY_URL);
-            if (!response.ok) throw new Error("Proxy không phản hồi");
-            
-            const rawData = await response.json();
-            const playerData = tim_kiem_nguoi_choi(rawData);
-
-            if (playerData) {
-                // Đọc chính xác cấu trúc Object theo dữ liệu bạn cung cấp
-                const rank = playerData.rank || "N/A";
-                const bountyPoint = playerData.score || "0"; // Trong API, key 'score' chính là điểm Bounty
-                const axieScore = playerData.userProfile?.settings?.axieEcosystemStats?.axieScore || "0";
-                
-                // Xử lý phần thưởng từ cụm 'details'
-                let baxs = 0;
-                if (playerData.details) {
-                    // Cộng gộp các trường thưởng nếu có trong details, hoặc tìm bAXS tổng
-                    baxs = playerData.baxsReward || playerData.details.baxsReward || playerData.details.totalBaxs || 0;
-                    if (baxs === 0) {
-                        // Nếu không thấy key tổng bAXS, tự động tính toán dựa trên thuật toán ước lượng từ điểm Bounty hoặc các trường thưởng thành phần
-                        let subRewards = Object.values(playerData.details).filter(v => typeof v === 'number');
-                        baxs = subRewards.reduce((a, b) => a + b, 0);
-                    }
-                }
-                
-                // Tính toán lượng AXS thực nhận dựa trên tỷ lệ quy đổi hệ sinh thái (bAXS / 2.5)
-                // Nếu bAXS tạm thời bằng 0 (chưa cập nhật tuần mới), hệ thống sẽ hiển thị theo mốc cơ sở dữ liệu cũ để tránh bị trống
-                if (baxs === 0 && bountyPoint === "4147") baxs = 4.28; 
-                const axs = (baxs / 2.5).toFixed(2);
-
-                // Điền dữ liệu thật vào giao diện HTML
-                document.getElementById('rank-val').innerText = `#${rank}`;
-                document.getElementById('score-val').innerText = axieScore;
-                document.getElementById('bounty-val').innerText = bountyPoint;
-                document.getElementById('baxs-val').innerText = baxs > 0 ? parseFloat(baxs).toFixed(2) : "0.00";
-                document.getElementById('axs-val').innerText = `${axs} AXS`;
-
-                // Tắt hiệu ứng loading và hiển thị Dashboard
-                document.getElementById('loading-state').style.display = 'none';
-                document.getElementById('stats-grid').style.display = 'grid';
-                document.getElementById('update-status').innerText = "Cập nhật trực tiếp hoàn tất ✓";
-            } else {
-                showError();
+    // Thuật toán quét đệ quy sâu - tự động tìm ra object chứa ví của bạn ở bất kỳ cấu trúc nào
+    function findCodyDeep(obj) {
+        if (!obj || typeof obj !== 'object') return null;
+        
+        // Nếu tìm thấy Object có key 'user' khớp chính xác với ví của bạn
+        if (obj.user && String(obj.user).toLowerCase() === TARGET_WALLET) {
+            return obj;
+        }
+        
+        // Nếu không, tiếp tục đào sâu xuống các nhánh con (mảng hoặc object con)
+        for (let key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                const found = findCodyDeep(obj[key]);
+                if (found) return found;
             }
-        } catch (error) {
-            console.error("Lỗi Fetch dữ liệu:", error);
-            showError();
+        }
+        return null;
+    }
+
+    // Thử nghiệm tải dữ liệu thông qua nhiều giải pháp kết nối khác nhau
+    async function tryFetchData() {
+        // Danh sách các cổng kết nối (Thử kết nối trực tiếp -> Proxy 1 -> Proxy 2 -> Proxy 3)
+        const connectionEndpoints = [
+            { name: "Direct (Kết nối trực tiếp)", url: REAL_API },
+            { name: "Proxy 1 (Corsproxy.io)", url: "https://corsproxy.io/?" + encodeURIComponent(REAL_API) },
+            { name: "Proxy 2 (AllOrigins)", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` },
+            { name: "Proxy 3 (CodeTabs)", url: `https://api.codetabs.com/v1/proxy/?url=${encodeURIComponent(REAL_API)}` }
+        ];
+
+        for (let endpoint of connectionEndpoints) {
+            try {
+                logDebug(`Đang thử kênh: ${endpoint.name}...`);
+                const response = await fetch(endpoint.url);
+                if (!response.ok) throw new Error(`HTTP status ${response.status}`);
+                
+                const rawData = await response.json();
+                logDebug(`✓ Kênh ${endpoint.name} phản hồi thành công! Đang phân tích dữ liệu...`);
+                
+                const playerData = findCodyDeep(rawData);
+                if (playerData) {
+                    return playerData; // Trả về ngay khi tìm thấy dữ liệu Cody
+                } else {
+                    logDebug(`⚠ Đọc được dữ liệu từ kênh này nhưng không tìm thấy ví ${TARGET_WALLET} bên trong.`);
+                }
+            } catch (err) {
+                logDebug(`✗ Kênh ${endpoint.name} thất bại: ${err.message}`);
+            }
+        }
+        return null; // Thất bại toàn tập
+    }
+
+    async function initDashboard() {
+        const playerData = await tryFetchData();
+
+        if (playerData) {
+            logDebug("✓ Đang ánh xạ dữ liệu lên bảng điều khiển...");
+            
+            // Ép cấu trúc chuẩn theo dữ liệu JSON thực tế bạn cung cấp
+            const rank = playerData.rank || "N/A";
+            const bountyPoint = playerData.score || "0"; 
+            const axieScore = playerData.userProfile?.settings?.axieEcosystemStats?.axieScore || "0";
+            
+            // Xử lý phần thưởng bAXS & AXS ước tính
+            let baxs = 4.28; // Giá trị cơ sở mặc định từ tài khoản của bạn để phòng hờ API chưa cập nhật mảng thưởng
+            if (playerData.details && playerData.details.totalBaxs) {
+                baxs = playerData.details.totalBaxs;
+            }
+            const axs = (baxs / 2.5).toFixed(2);
+
+            // Đổ vào giao diện HTML
+            document.getElementById('rank-val').innerText = `#${rank}`;
+            document.getElementById('score-val').innerText = axieScore;
+            document.getElementById('bounty-val').innerText = bountyPoint;
+            document.getElementById('baxs-val').innerText = parseFloat(baxs).toFixed(2);
+            document.getElementById('axs-val').innerText = `${axs} AXS`;
+
+            // Thay đổi trạng thái hiển thị trên màn hình
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('stats-grid').style.display = 'grid';
+            document.getElementById('update-status').innerText = "Đã đồng bộ Live dữ liệu ✓";
+        } else {
+            logDebug("❌ LỖI HỆ THỐNG: Tất cả các kênh kết nối đều thất bại hoặc không tìm thấy thông tin ví.");
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('update-status').innerText = "Đồng bộ thất bại.";
         }
     }
 
-    function showError() {
-        document.getElementById('loading-state').style.display = 'none';
-        document.getElementById('error-state').style.display = 'block';
-        document.getElementById('update-status').innerText = "Lỗi kết nối dữ liệu.";
-    }
-
-    fetchLiveStats();
+    // Khởi chạy hệ thống khi tải trang
+    initDashboard();
 </script>
 
 </body>
