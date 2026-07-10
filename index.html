@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cody | Axie Bounty Board</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --accent: #38bdf8;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .dashboard {
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 600px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 1rem;
+        }
+        .header h1 {
+            margin: 0;
+            color: var(--accent);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+        .card {
+            background-color: #334155;
+            padding: 1.5rem;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .card.full { grid-column: span 2; background-color: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); }
+        .card h3 { margin: 0 0 0.5rem 0; color: var(--text-sub); font-size: 0.9rem; text-transform: uppercase; }
+        .card .value { font-size: 1.8rem; font-weight: bold; }
+        .trend-down { color: var(--danger); font-size: 1rem; }
+    </style>
+</head>
+<body>
+
+<div class="dashboard">
+    <div class="header">
+        <h1>Tài khoản: Cody</h1>
+        <p>Premier Bounty Board Stats</p>
+    </div>
+    
+    <div class="grid" id="stats-container">
+        <!-- Dữ liệu được nhúng sẵn từ kết quả vừa tìm được -->
+        <div class="card">
+            <h3>Thứ hạng (Rank)</h3>
+            <div class="value">#2619 <span class="trend-down">(↓821)</span></div>
+        </div>
+        <div class="card">
+            <h3>Axie Score</h3>
+            <div class="value">70</div>
+        </div>
+        <div class="card">
+            <h3>Bounty Point</h3>
+            <div class="value">4147</div>
+        </div>
+        <div class="card">
+            <h3>bAXS Reward</h3>
+            <div class="value" style="color: #f59e0b;">4.28</div>
+        </div>
+        <div class="card full">
+            <h3>Dự kiến nhận AXS</h3>
+            <div class="value" style="color: var(--success);">1.71 AXS</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // PHẦN NÂNG CẤP (Tự động cập nhật):
+    // Trang web Axie Bald lấy dữ liệu từ một API ẩn. 
+    // Khi bạn tìm được đường link API đó, bạn sẽ thay thế URL vào biến dưới đây 
+    // và bỏ comment (xóa dấu //) đoạn code fetch() để web tự chạy.
+    
+    const API_URL = "LINK_API_CUA_AXIE_BALD_HOAC_SKY_MAVIS_O_DAY"; 
+
+    /*
+    fetch(API_URL)
+        .then(response => response.json())
+        .then(data => {
+            // Tìm user Cody trong data
+            const codyData = data.find(user => user.name.toLowerCase() === 'cody');
+            if(codyData) {
+                // Cập nhật giao diện ở đây (Sẽ hướng dẫn bạn chi tiết khi có link API)
+            }
+        })
+        .catch(err => console.log("Lỗi tải dữ liệu: ", err));
+    */
+</script>
+
+</body>
+</html>
