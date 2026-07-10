@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Inspector | Live Axie Stats</title>
+    <title>Axie Bounty Board Monitor (Firebase Realtime)</title>
+    <!-- Tích hợp Firebase SDK bản Realtime Database -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    
     <style>
         :root {
             --bg-color: #0f172a;
@@ -15,6 +19,7 @@
             --accent-hover: #0ea5e9;
             --success: #10b981;
             --danger: #ef4444;
+            --warning: #f59e0b;
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -60,109 +65,93 @@
             transition: background 0.2s;
         }
         .refresh-btn:hover { background-color: var(--accent-hover); }
-        .refresh-btn:disabled {
-            background-color: #475569;
-            color: var(--text-sub);
-            cursor: not-allowed;
-        }
 
         .status-text { text-align: center; color: var(--text-sub); font-size: 0.9rem; margin-bottom: 1.5rem; }
+        .accounts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem; }
+        .account-block { background-color: var(--block-bg); padding: 1.5rem; border-radius: 12px; border: 1px solid #334155; }
+        .account-title { font-size: 1.3rem; font-weight: bold; color: var(--accent); margin-bottom: 2px; }
+        .account-wallet { font-family: monospace; font-size: 0.8rem; color: var(--text-sub); margin-bottom: 1.5rem; word-break: break-all; }
         
-        .accounts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 2rem;
-        }
-        
-        .account-block {
-            background-color: var(--block-bg);
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 1px solid #334155;
-        }
-        .account-title {
-            font-size: 1.3rem;
-            font-weight: bold;
-            color: var(--accent);
-            margin-bottom: 2px;
-        }
-        .account-wallet {
-            font-family: monospace;
-            font-size: 0.8rem;
-            color: var(--text-sub);
-            margin-bottom: 1.5rem;
-            word-break: break-all;
-        }
-
-        .stats-subgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
-        .card { background-color: #243147; padding: 1rem; border-radius: 8px; text-align: center; }
-        .card.full { grid-column: span 2; background-color: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); }
+        .stats-subgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        .card { background-color: #243147; padding: 1rem; border-radius: 8px; text-align: center; display: flex; flex-direction: column; justify-content: center; }
+        .card.highlight { border: 1px solid var(--accent); background-color: rgba(56, 189, 248, 0.03); }
         .card h3 { margin: 0 0 0.4rem 0; color: var(--text-sub); font-size: 0.8rem; text-transform: uppercase; }
-        .value { font-size: 1.5rem; font-weight: bold; }
+        .value { font-size: 1.4rem; font-weight: bold; }
         
-        /* Hộp soi mã JSON thô mới */
-        .inspector-title {
-            margin-top: 1.5rem;
-            font-size: 0.85rem;
-            color: #f59e0b;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            border-top: 1px dashed #334155;
-            padding-top: 1rem;
-        }
-        .json-inspector {
-            background-color: #020617;
-            color: #3ade84;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.75rem;
-            padding: 12px;
-            border-radius: 6px;
-            max-height: 200px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-break: break-all;
-            text-align: left;
-            margin-top: 0.5rem;
-            border: 1px solid #1e293b;
-        }
+        .diff-container { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: center; border-top: 1px solid #334155; padding-top: 6px; }
+        .diff-line { font-size: 0.75rem; font-weight: 500; }
 
         .loading { text-align: center; color: var(--accent); font-size: 1.2rem; padding: 2rem; }
         .error { text-align: center; color: var(--danger); font-size: 1.2rem; padding: 1rem; }
+
+        @media (max-width: 640px) {
+            .stats-subgrid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
 
 <div class="dashboard">
     <div class="header">
-        <h1>Giám sát & Thám mã Axie API</h1>
-        <button id="refresh-btn" class="refresh-btn">🔄 Làm mới tất cả</button>
+        <h1>Giám Sát Điểm Axie Bounty (Realtime DB Sync)</h1>
+        <button id="refresh-btn" class="refresh-btn">🔄 Làm mới điểm số</button>
     </div>
 
-    <div id="update-status" class="status-text">Đang kết nối mạng lưới...</div>
-    
-    <div id="loading-state" class="loading">🔄 Đang phân tích cấu trúc gói tin API...</div>
-    
-    <div id="error-state" class="error" style="display: none;">
-        <div>❌ Không thể kết nối hoặc tải file dữ liệu từ API.</div>
-    </div>
+    <div id="update-status" class="status-text">Đang khởi tạo...</div>
+    <div id="loading-state" class="loading">🔄 Đang tải dữ liệu thực tế...</div>
+    <div id="error-state" class="error" style="display: none;">⚠️ Cần cấu hình thông tin Firebase Config chính xác trong mã nguồn.</div>
 
     <div class="accounts-grid" id="accounts-container"></div>
 </div>
 
 <script>
-    const REAL_API = "https://axie-bald.vercel.app/api/getPBB";
-    
+    // ===================================================
+    // 1. ĐIỀN CHÍNH XÁC CẤU HÌNH FIREBASE CỦA BẠN VÀO ĐÂY
+    // ===================================================
+    const firebaseConfig = {
+  apiKey: "AIzaSyDoAeayAY4AiEJkJuupkuAj72awemwk-Bo",
+  authDomain: "axielb-17704.firebaseapp.com",
+  databaseURL: "https://axielb-17704-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "axielb-17704",
+  storageBucket: "axielb-17704.firebasestorage.app",
+  messagingSenderId: "901526066892",
+  appId: "1:901526066892:web:7257fb8a98ef1c6da0d469",
+  measurementId: "G-ZYVQLKT9XE"
+};
+
+    // Khởi tạo ứng dụng Firebase Realtime an toàn
+    let db = null;
+    try {
+        if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database(); // Chuyển sang sử dụng Realtime Database
+        }
+    } catch (e) {
+        console.error("Lỗi cấu hình Firebase khởi tạo:", e);
+    }
+
+    // Danh sách tài khoản
     const ACCOUNTS = [
         { name: "Cody", wallet: "0x9b3bc1c03e5a8889e893e54950a7c31c11301b79" },
         { name: "Crystie", wallet: "0xe9add5b325d2b7f869b3a3c7b1047600a76192f7" }
     ];
-    
+
+    const REAL_API = "https://axie-bald.vercel.app/api/getPBB";
     let cachedRawData = null;
+
+    function getMostRecent10AMMilestone() {
+        const now = new Date();
+        const milestone = new Date(now);
+        milestone.setHours(10, 0, 0, 0);
+        if (now < milestone) {
+            milestone.setDate(milestone.getDate() - 1);
+        }
+        return milestone.getTime();
+    }
 
     function findWalletDeep(obj, targetWallet) {
         if (!obj || typeof obj !== 'object') return null;
         if (obj.user && String(obj.user).toLowerCase() === targetWallet.toLowerCase()) return obj;
-        
         for (let key in obj) {
             if (obj.hasOwnProperty(key)) {
                 const found = findWalletDeep(obj[key], targetWallet);
@@ -173,13 +162,11 @@
     }
 
     async function fetchRawDataWithFallback() {
-        // Thử quét qua các cổng kết nối dự phòng để tránh nghẽn mạng
         const connectionEndpoints = [
-            { name: "Direct", url: REAL_API },
-            { name: "Proxy 1", url: "https://corsproxy.io/?" + encodeURIComponent(REAL_API) },
-            { name: "Proxy 2", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` }
+            { url: REAL_API },
+            { url: "https://corsproxy.io/?" + encodeURIComponent(REAL_API) },
+            { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` }
         ];
-
         for (let endpoint of connectionEndpoints) {
             try {
                 const response = await fetch(endpoint.url);
@@ -190,26 +177,93 @@
         return null;
     }
 
-    function renderAllAccounts() {
-        if (!cachedRawData) return;
+    async function updateDashboard() {
+        document.getElementById('loading-state').style.display = 'block';
+        document.getElementById('error-state').style.display = 'none';
+        
+        cachedRawData = await fetchRawDataWithFallback();
+        if (!cachedRawData) {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('error-state').innerText = "❌ Lỗi: Không thể lấy dữ liệu từ Axie API.";
+            return;
+        }
 
         const container = document.getElementById('accounts-container');
         container.innerHTML = ''; 
-        
-        ACCOUNTS.forEach(acc => {
+        const currentMilestone = getMostRecent10AMMilestone();
+
+        for (let acc of ACCOUNTS) {
+            const walletLower = acc.wallet.toLowerCase();
             const playerData = findWalletDeep(cachedRawData, acc.wallet);
 
             if (playerData) {
                 const rank = playerData.rank || "N/A";
-                const bountyPoint = playerData.score || "0"; 
+                const bountyPoint = parseInt(playerData.score, 10) || 0; 
                 const axieScore = playerData.userProfile?.settings?.axieEcosystemStats?.axieScore || "0";
-                
-                // Hiển thị chuỗi JSON thu gọn của riêng ví này để chủ nhà kiểm tra cấu trúc cấu phần
-                const rawJsonString = JSON.stringify(playerData, null, 2);
+
+                let prevScore = bountyPoint;
+                let baselineScore = bountyPoint;
+                let dbMilestone = 0;
+                let firebaseSuccess = false;
+
+                // Tương tác với Realtime Database
+                if (db) {
+                    try {
+                        const dbRef = db.ref('bounty_tracker/' + walletLower);
+                        const snapshot = await dbRef.once('value');
+                        const dbData = snapshot.val();
+
+                        if (dbData) {
+                            dbMilestone = dbData.currentMilestone || 0;
+                            prevScore = dbData.lastScore !== undefined ? dbData.lastScore : bountyPoint;
+                            baselineScore = dbData.baselineScore !== undefined ? dbData.baselineScore : bountyPoint;
+
+                            if (dbMilestone !== currentMilestone) {
+                                baselineScore = prevScore;
+                                dbMilestone = currentMilestone;
+                            }
+                        }
+
+                        // Lưu đè/Cập nhật dữ liệu lên Realtime DB
+                        await dbRef.update({
+                            currentMilestone: currentMilestone,
+                            lastScore: bountyPoint,
+                            baselineScore: baselineScore
+                        });
+                        
+                        firebaseSuccess = true;
+                    } catch (dbError) {
+                        console.error("Lỗi Realtime DB cho ví: " + walletLower, dbError);
+                        firebaseSuccess = false;
+                    }
+                }
+
+                const sessionDiff = bountyPoint - prevScore;
+                const todayDiff = bountyPoint - baselineScore;
+
+                let sessionText = `<span class="diff-line" style="color: var(--text-sub);">🔄 Vừa bấm: Không đổi</span>`;
+                if (sessionDiff > 0) {
+                    sessionText = `<span class="diff-line" style="color: var(--success); font-weight: bold;">🔄 Vừa tăng: +${sessionDiff}</span>`;
+                } else if (sessionDiff < 0) {
+                    sessionText = `<span class="diff-line" style="color: var(--danger); font-weight: bold;">🔄 Vừa giảm: ${sessionDiff}</span>`;
+                }
+
+                let todayText = `<span class="diff-line" style="color: var(--text-sub);">🌞 Hôm nay: +0</span>`;
+                if (todayDiff > 0) {
+                    todayText = `<span class="diff-line" style="color: var(--warning); font-weight: bold;">🌞 Hôm nay: +${todayDiff}</span>`;
+                }
+
+                const cloudBadge = firebaseSuccess 
+                    ? `<span style="color: var(--success); font-size: 0.75rem; font-weight: normal;">☁️ Đã đồng bộ</span>`
+                    : `<span style="color: var(--danger); font-size: 0.75rem; font-weight: normal;">⚠️ Lỗi Cloud</span>`;
 
                 const blockHtml = `
                     <div class="account-block">
-                        <div class="account-title">Tài khoản: ${acc.name}</div>
+                        <div class="account-title" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Tài khoản: ${acc.name}</span>
+                            ${cloudBadge}
+                        </div>
                         <div class="account-wallet">${acc.wallet}</div>
                         
                         <div class="stats-subgrid">
@@ -221,54 +275,31 @@
                                 <h3>Axie Score</h3>
                                 <div class="value">${axieScore}</div>
                             </div>
-                            <div class="card">
+                            <div class="card highlight">
                                 <h3>Bounty Point</h3>
-                                <div class="value">${bountyPoint}</div>
-                            </div>
-                            <div class="card">
-                                <h3>bAXS Reward</h3>
-                                <div class="value" style="color: #f59e0b;" id="baxs-${acc.name}">Tìm cấu trúc...</div>
-                            </div>
-                            <div class="card full">
-                                <h3>Dự kiến nhận về</h3>
-                                <div class="value" style="color: var(--success);" id="axs-${acc.name}">- AXS</div>
+                                <div class="value" style="color: var(--accent);">${bountyPoint}</div>
+                                <div class="diff-container">
+                                    ${sessionText}
+                                    ${todayText}
+                                </div>
                             </div>
                         </div>
-
-                        <!-- Hộp thám mã hiển thị dữ liệu gốc từ API -->
-                        <div class="inspector-title">🔍 Cấu trúc thuộc tính thật của ${acc.name}:</div>
-                        <pre class="json-inspector">${rawJsonString}</pre>
                     </div>
                 `;
                 container.innerHTML += blockHtml;
             } else {
                 container.innerHTML += `
-                    <div class="account-block" style="border-color: var(--danger)">
+                    <div class="account-block" style="border-color: var(--danger); text-align: center;">
                         <div class="account-title" style="color: var(--danger)">Tài khoản: ${acc.name}</div>
                         <div class="account-wallet">${acc.wallet}</div>
-                        <div style="font-weight: bold; margin-top: 1rem; text-align:center; color:var(--danger)">❌ Ví không có trong danh sách của API này</div>
+                        <div style="font-weight: bold; margin-top: 1rem; color: var(--danger)">❌ Ví chưa có dữ liệu trên API này</div>
                     </div>
                 `;
             }
-        });
+        }
 
         document.getElementById('loading-state').style.display = 'none';
-        document.getElementById('update-status').innerText = "Đã hiển thị bộ thám mã API thành công ✓";
-    }
-
-    async function updateDashboard() {
-        document.getElementById('loading-state').style.display = 'block';
-        document.getElementById('error-state').style.display = 'none';
-        
-        cachedRawData = await fetchRawDataWithFallback();
-
-        if (cachedRawData) {
-            renderAllAccounts();
-        } else {
-            document.getElementById('loading-state').style.display = 'none';
-            document.getElementById('error-state').style.display = 'block';
-            document.getElementById('update-status').innerText = "Kết nối API thất bại.";
-        }
+        document.getElementById('update-status').innerText = "Đã cập nhật dữ liệu live thành công ✓";
     }
 
     document.getElementById('refresh-btn').addEventListener('click', updateDashboard);
