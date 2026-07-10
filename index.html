@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>All Accounts | Live Axie Stats</title>
+    <title>API Inspector | Live Axie Stats</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -34,7 +34,7 @@
             border-radius: 15px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.5);
             width: 100%;
-            max-width: 1100px; /* Mở rộng chiều rộng để chứa nhiều ví song song */
+            max-width: 1100px;
         }
         .header {
             display: flex;
@@ -68,24 +68,17 @@
 
         .status-text { text-align: center; color: var(--text-sub); font-size: 0.9rem; margin-bottom: 1.5rem; }
         
-        /* Khu vực lưới chứa các tài khoản */
         .accounts-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 2rem;
         }
         
-        /* Khung lớn bọc từng tài khoản */
         .account-block {
             background-color: var(--block-bg);
             padding: 1.5rem;
             border-radius: 12px;
             border: 1px solid #334155;
-        }
-        .account-block.error-block {
-            border-color: var(--danger);
-            background-color: rgba(239, 68, 68, 0.05);
-            text-align: center;
         }
         .account-title {
             font-size: 1.3rem;
@@ -101,77 +94,74 @@
             word-break: break-all;
         }
 
-        /* Lưới thông số nhỏ bên trong mỗi tài khoản */
         .stats-subgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
         .card { background-color: #243147; padding: 1rem; border-radius: 8px; text-align: center; }
         .card.full { grid-column: span 2; background-color: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); }
         .card h3 { margin: 0 0 0.4rem 0; color: var(--text-sub); font-size: 0.8rem; text-transform: uppercase; }
         .value { font-size: 1.5rem; font-weight: bold; }
         
-        .loading { text-align: center; color: var(--accent); font-size: 1.2rem; padding: 2rem; }
-        .error { text-align: center; color: var(--danger); font-size: 1.2rem; padding: 1rem; }
-        .debug-box {
-            text-align: left;
-            background-color: #0f172a;
-            color: #94a3b8;
-            font-family: monospace;
+        /* Hộp soi mã JSON thô mới */
+        .inspector-title {
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: #f59e0b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-top: 1px dashed #334155;
+            padding-top: 1rem;
+        }
+        .json-inspector {
+            background-color: #020617;
+            color: #3ade84;
+            font-family: 'Courier New', Courier, monospace;
             font-size: 0.75rem;
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 15px;
+            padding: 12px;
+            border-radius: 6px;
+            max-height: 200px;
+            overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-all;
-            max-height: 120px;
-            overflow-y: auto;
+            text-align: left;
+            margin-top: 0.5rem;
+            border: 1px solid #1e293b;
         }
+
+        .loading { text-align: center; color: var(--accent); font-size: 1.2rem; padding: 2rem; }
+        .error { text-align: center; color: var(--danger); font-size: 1.2rem; padding: 1rem; }
     </style>
 </head>
 <body>
 
 <div class="dashboard">
     <div class="header">
-        <h1>Bảng giám sát Axie Multi-Live</h1>
+        <h1>Giám sát & Thám mã Axie API</h1>
         <button id="refresh-btn" class="refresh-btn">🔄 Làm mới tất cả</button>
     </div>
 
-    <div id="update-status" class="status-text">Đang chuẩn bị...</div>
+    <div id="update-status" class="status-text">Đang kết nối mạng lưới...</div>
     
-    <div id="loading-state" class="loading">🔄 Đang tải dữ liệu chuỗi khối live cho toàn bộ ví...</div>
+    <div id="loading-state" class="loading">🔄 Đang phân tích cấu trúc gói tin API...</div>
     
     <div id="error-state" class="error" style="display: none;">
-        <div>❌ Không thể kết nối với cổng dữ liệu API.</div>
-        <div class="debug-box" id="debug-log">Nhật ký lỗi hệ thống:</div>
+        <div>❌ Không thể kết nối hoặc tải file dữ liệu từ API.</div>
     </div>
 
-    <!-- Nơi dữ liệu của Cody và Crystie tự động đổ vào song song nhau -->
     <div class="accounts-grid" id="accounts-container"></div>
 </div>
 
 <script>
     const REAL_API = "https://axie-bald.vercel.app/api/getPBB";
     
-    // Khai báo danh sách ví tại đây, sau này muốn thêm ví thứ 3, 4 chỉ việc copy thêm dòng vào mảng này
     const ACCOUNTS = [
         { name: "Cody", wallet: "0x9b3bc1c03e5a8889e893e54950a7c31c11301b79" },
         { name: "Crystie", wallet: "0xe9add5b325d2b7f869b3a3c7b1047600a76192f7" }
     ];
     
-    let logs = [];
     let cachedRawData = null;
 
-    function logDebug(msg) {
-        console.log(msg);
-        logs.push(msg);
-        document.getElementById('debug-log').innerText = "Nhật ký hệ thống:\n" + logs.join("\n");
-    }
-
-    // Thuật toán quét đệ quy sâu tìm ví
     function findWalletDeep(obj, targetWallet) {
         if (!obj || typeof obj !== 'object') return null;
-        
-        if (obj.user && String(obj.user).toLowerCase() === targetWallet.toLowerCase()) {
-            return obj;
-        }
+        if (obj.user && String(obj.user).toLowerCase() === targetWallet.toLowerCase()) return obj;
         
         for (let key in obj) {
             if (obj.hasOwnProperty(key)) {
@@ -182,60 +172,41 @@
         return null;
     }
 
-    // Tải dữ liệu qua các lớp Proxy dự phòng
     async function fetchRawDataWithFallback() {
+        // Thử quét qua các cổng kết nối dự phòng để tránh nghẽn mạng
         const connectionEndpoints = [
             { name: "Direct", url: REAL_API },
             { name: "Proxy 1", url: "https://corsproxy.io/?" + encodeURIComponent(REAL_API) },
-            { name: "Proxy 2", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` },
-            { name: "Proxy 3", url: `https://api.codetabs.com/v1/proxy/?url=${encodeURIComponent(REAL_API)}` }
+            { name: "Proxy 2", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` }
         ];
 
         for (let endpoint of connectionEndpoints) {
             try {
-                logDebug(`Đang quét qua cổng: ${endpoint.name}...`);
                 const response = await fetch(endpoint.url);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                
-                const data = await response.json();
-                logDebug(`✓ Cổng ${endpoint.name} phản hồi thành công.`);
-                return data; 
-            } catch (err) {
-                logDebug(`✗ Cổng ${endpoint.name} báo lỗi: ${err.message}`);
-            }
+                if (!response.ok) throw new Error();
+                return await response.json(); 
+            } catch (err) {}
         }
         return null;
     }
 
-    // Hàm dựng giao diện đồng thời cho toàn bộ tài khoản
     function renderAllAccounts() {
         if (!cachedRawData) return;
 
         const container = document.getElementById('accounts-container');
-        container.innerHTML = ''; // Làm sạch màn hình cũ
+        container.innerHTML = ''; 
         
-        let validAccountsRendered = 0;
-
         ACCOUNTS.forEach(acc => {
             const playerData = findWalletDeep(cachedRawData, acc.wallet);
 
             if (playerData) {
-                validAccountsRendered++;
-                
                 const rank = playerData.rank || "N/A";
                 const bountyPoint = playerData.score || "0"; 
                 const axieScore = playerData.userProfile?.settings?.axieEcosystemStats?.axieScore || "0";
                 
-                // Cơ chế tính toán phần thưởng bAXS an toàn
-                let baxs = 0;
-                if (playerData.details && playerData.details.totalBaxs) {
-                    baxs = playerData.details.totalBaxs;
-                } else if (acc.name === "Cody") {
-                    baxs = 4.28; // Giữ số liệu cơ sở cố định cho ví Cody nếu mảng thưởng API tạm rỗng
-                }
-                const axs = (baxs / 2.5).toFixed(2);
+                // Hiển thị chuỗi JSON thu gọn của riêng ví này để chủ nhà kiểm tra cấu trúc cấu phần
+                const rawJsonString = JSON.stringify(playerData, null, 2);
 
-                // Tạo chuỗi HTML cho khối tài khoản này
                 const blockHtml = `
                     <div class="account-block">
                         <div class="account-title">Tài khoản: ${acc.name}</div>
@@ -256,72 +227,52 @@
                             </div>
                             <div class="card">
                                 <h3>bAXS Reward</h3>
-                                <div class="value" style="color: #f59e0b;">${parseFloat(baxs).toFixed(2)}</div>
+                                <div class="value" style="color: #f59e0b;" id="baxs-${acc.name}">Tìm cấu trúc...</div>
                             </div>
                             <div class="card full">
                                 <h3>Dự kiến nhận về</h3>
-                                <div class="value" style="color: var(--success);">${axs} AXS</div>
+                                <div class="value" style="color: var(--success);" id="axs-${acc.name}">- AXS</div>
                             </div>
                         </div>
+
+                        <!-- Hộp thám mã hiển thị dữ liệu gốc từ API -->
+                        <div class="inspector-title">🔍 Cấu trúc thuộc tính thật của ${acc.name}:</div>
+                        <pre class="json-inspector">${rawJsonString}</pre>
                     </div>
                 `;
                 container.innerHTML += blockHtml;
             } else {
-                logDebug(`⚠ API trả về thành công nhưng không tìm thấy dữ liệu cho ví của ${acc.name}`);
                 container.innerHTML += `
-                    <div class="account-block error-block">
+                    <div class="account-block" style="border-color: var(--danger)">
                         <div class="account-title" style="color: var(--danger)">Tài khoản: ${acc.name}</div>
                         <div class="account-wallet">${acc.wallet}</div>
-                        <div style="font-weight: bold; margin-top: 1rem;">❌ Ví chưa kích hoạt hoặc không có trong danh sách API</div>
+                        <div style="font-weight: bold; margin-top: 1rem; text-align:center; color:var(--danger)">❌ Ví không có trong danh sách của API này</div>
                     </div>
                 `;
             }
         });
 
-        // Tắt trạng thái Loading
         document.getElementById('loading-state').style.display = 'none';
-        
-        if (validAccountsRendered > 0) {
-            document.getElementById('update-status').innerText = `Đã cập nhật đồng bộ ${validAccountsRendered}/${ACCOUNTS.length} ví ✓`;
-        } else {
-            document.getElementById('error-state').style.display = 'block';
-            document.getElementById('update-status').innerText = "Không trích xuất được thông tin ví nào.";
-        }
+        document.getElementById('update-status').innerText = "Đã hiển thị bộ thám mã API thành công ✓";
     }
 
-    // Tiến trình điều khiển tổng
-    async function updateDashboard(isRefreshAction = false) {
-        const refreshBtn = document.getElementById('refresh-btn');
-        refreshBtn.disabled = true;
-        
+    async function updateDashboard() {
         document.getElementById('loading-state').style.display = 'block';
         document.getElementById('error-state').style.display = 'none';
-        document.getElementById('update-status').innerText = "Đang kéo dữ liệu từ chuỗi khối...";
-
-        if (isRefreshAction) {
-            logs = []; 
-            logDebug("Kích hoạt lệnh làm mới toàn hệ thống...");
-        }
-
+        
         cachedRawData = await fetchRawDataWithFallback();
 
         if (cachedRawData) {
             renderAllAccounts();
         } else {
-            logDebug("❌ LỖI KẾT NỐI: Toàn bộ cổng kết nối hoặc Proxy đều không thể lấy được file JSON.");
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('error-state').style.display = 'block';
-            document.getElementById('update-status').innerText = "Kết nối thất bại.";
+            document.getElementById('update-status').innerText = "Kết nối API thất bại.";
         }
-        
-        refreshBtn.disabled = false;
     }
 
-    // Gắn sự kiện click cho nút làm mới dữ liệu
-    document.getElementById('refresh-btn').addEventListener('click', () => updateDashboard(true));
-
-    // Lệnh kích hoạt chạy ngầm ngay khi tải trang
-    updateDashboard(false);
+    document.getElementById('refresh-btn').addEventListener('click', updateDashboard);
+    updateDashboard();
 </script>
 
 </body>
