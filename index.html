@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cody | Axie Bounty Board</title>
+    <title>Cody | Live Axie Stats</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -38,25 +38,15 @@
             border-bottom: 1px solid #334155;
             padding-bottom: 1rem;
         }
-        .header h1 {
-            margin: 0;
-            color: var(--accent);
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 1.5rem;
-        }
-        .card {
-            background-color: #334155;
-            padding: 1.5rem;
-            border-radius: 10px;
-            text-align: center;
-        }
+        .header h1 { margin: 0; color: var(--accent); }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+        .card { background-color: #334155; padding: 1.5rem; border-radius: 10px; text-align: center; }
         .card.full { grid-column: span 2; background-color: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); }
         .card h3 { margin: 0 0 0.5rem 0; color: var(--text-sub); font-size: 0.9rem; text-transform: uppercase; }
-        .card .value { font-size: 1.8rem; font-weight: bold; }
-        .trend-down { color: var(--danger); font-size: 1rem; }
+        .value { font-size: 1.8rem; font-weight: bold; }
+        .loading { text-align: center; color: var(--accent); font-size: 1.2rem; padding: 2rem; }
+        .error { text-align: center; color: var(--danger); font-size: 1.2rem; padding: 2rem; }
+        .trend-down { color: var(--danger); font-size: 1.1rem; font-weight: normal; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -64,54 +54,110 @@
 <div class="dashboard">
     <div class="header">
         <h1>Tài khoản: Cody</h1>
-        <p>Premier Bounty Board Stats</p>
+        <p id="update-status">Đang đồng bộ dữ liệu live...</p>
     </div>
     
-    <div class="grid" id="stats-container">
-        <!-- Dữ liệu được nhúng sẵn từ kết quả vừa tìm được -->
+    <div id="loading-state" class="loading">🔄 Đang kết nối trực tiếp đến Axie API...</div>
+    <div id="error-state" class="error" style="display: none;">❌ Không tìm thấy người chơi 'Cody' hoặc API đang bảo trì.</div>
+
+    <div class="grid" id="stats-grid" style="display: none;">
         <div class="card">
             <h3>Thứ hạng (Rank)</h3>
-            <div class="value">#2619 <span class="trend-down">(↓821)</span></div>
+            <div class="value" id="rank-val">-</div>
         </div>
         <div class="card">
             <h3>Axie Score</h3>
-            <div class="value">70</div>
+            <div class="value" id="score-val">-</div>
         </div>
         <div class="card">
             <h3>Bounty Point</h3>
-            <div class="value">4147</div>
+            <div class="value" id="bounty-val">-</div>
         </div>
         <div class="card">
             <h3>bAXS Reward</h3>
-            <div class="value" style="color: #f59e0b;">4.28</div>
+            <div class="value" id="baxs-val" style="color: #f59e0b;">-</div>
         </div>
         <div class="card full">
-            <h3>Dự kiến nhận AXS</h3>
-            <div class="value" style="color: var(--success);">1.71 AXS</div>
+            <h3>Dự kiến nhận về</h3>
+            <div class="value" id="axs-val" style="color: var(--success);">- AXS</div>
         </div>
     </div>
 </div>
 
 <script>
-    // PHẦN NÂNG CẤP (Tự động cập nhật):
-    // Trang web Axie Bald lấy dữ liệu từ một API ẩn. 
-    // Khi bạn tìm được đường link API đó, bạn sẽ thay thế URL vào biến dưới đây 
-    // và bỏ comment (xóa dấu //) đoạn code fetch() để web tự chạy.
+    // Đường link API thực tế bạn vừa tìm được
+    const REAL_API = "https://axie-bald.vercel.app/api/getPBB"; 
     
-    const API_URL = "LINK_API_CUA_AXIE_BALD_HOAC_SKY_MAVIS_O_DAY"; 
+    // Bọc qua Proxy allorigins để GitHub Pages không bị dính lỗi CORS (chặn bảo mật chéo kênh)
+    const PROXY_URL = `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}`;
 
-    /*
-    fetch(API_URL)
-        .then(response => response.json())
-        .then(data => {
-            // Tìm user Cody trong data
-            const codyData = data.find(user => user.name.toLowerCase() === 'cody');
-            if(codyData) {
-                // Cập nhật giao diện ở đây (Sẽ hướng dẫn bạn chi tiết khi có link API)
+    async function fetchLiveStats() {
+        try {
+            const response = await fetch(PROXY_URL);
+            if (!response.ok) throw new Error("API Connection Error");
+            
+            const rawData = await response.json();
+            
+            // Xử lý dữ liệu trả về (hỗ trợ cả mảng bọc ngoài hoặc object chứa mảng)
+            let playerList = Array.isArray(rawData) ? rawData : (rawData.players || rawData.data || []);
+
+            // Tìm kiếm tài khoản Cody (không phân biệt hoa thường)
+            let codyData = playerList.find(player => {
+                if (Array.isArray(player)) {
+                    return player.some(val => String(val).toLowerCase() === 'cody');
+                }
+                return Object.values(player).some(val => String(val).toLowerCase() === 'cody');
+            });
+
+            if (codyData) {
+                let rank, score, change, bounty, baxs, axs;
+
+                // Nếu API trả về dạng mảng dựa theo log console trước đó
+                if (Array.isArray(codyData)) {
+                    rank = codyData[0];
+                    score = codyData[2];
+                    change = codyData[4] || "";
+                    bounty = codyData[5];
+                    baxs = codyData[9];
+                    axs = codyData[10];
+                } else {
+                    // Dự phòng nếu API thay đổi cấu trúc sang dạng Object định danh
+                    rank = codyData.rank || codyData.position || "N/A";
+                    score = codyData.axieScore || codyData.score || "N/A";
+                    change = codyData.change || codyData.rankChange || "";
+                    bounty = codyData.bountyPoint || codyData.points || "N/A";
+                    baxs = codyData.baxsReward || codyData.baxs || "N/A";
+                    axs = codyData.axsReward || codyData.axs || "N/A";
+                }
+
+                // Cập nhật các chỉ số live vào giao diện
+                document.getElementById('rank-val').innerHTML = `#${rank} <span class="trend-down">${change}</span>`;
+                document.getElementById('score-val').innerText = score;
+                document.getElementById('bounty-val').innerText = bounty;
+                document.getElementById('baxs-val').innerText = baxs;
+                document.getElementById('axs-val').innerText = `${axs} AXS`;
+
+                // Thay đổi trạng thái hiển thị trên màn hình
+                document.getElementById('loading-state').style.display = 'none';
+                document.getElementById('stats-grid').style.display = 'grid';
+                document.getElementById('update-status').innerText = "Cập nhật trực tiếp hoàn tất ✓";
+            } else {
+                showError();
             }
-        })
-        .catch(err => console.log("Lỗi tải dữ liệu: ", err));
-    */
+        } catch (error) {
+            console.error("Lỗi fetch:", error);
+            showError();
+        }
+    }
+
+    function showError() {
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('error-state').style.display = 'block';
+        document.getElementById('update-status').innerText = "Lỗi kết nối dữ liệu.";
+    }
+
+    // Kích hoạt hàm gọi dữ liệu ngay khi tải trang
+    fetchLiveStats();
 </script>
 
 </body>
