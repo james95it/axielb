@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Axie Bounty Board Monitor (Firebase Realtime)</title>
+    <title>Axie Bounty Board Monitor (Realtime DB Sync)</title>
     <!-- Tích hợp Firebase SDK bản Realtime Database -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
@@ -72,7 +72,8 @@
         .account-title { font-size: 1.3rem; font-weight: bold; color: var(--accent); margin-bottom: 2px; }
         .account-wallet { font-family: monospace; font-size: 0.8rem; color: var(--text-sub); margin-bottom: 1.5rem; word-break: break-all; }
         
-        .stats-subgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        /* Đã chỉnh lại từ 3 cột thành 2 cột cho cân đối */
+        .stats-subgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
         .card { background-color: #243147; padding: 1rem; border-radius: 8px; text-align: center; display: flex; flex-direction: column; justify-content: center; }
         .card.highlight { border: 1px solid var(--accent); background-color: rgba(56, 189, 248, 0.03); }
         .card h3 { margin: 0 0 0.4rem 0; color: var(--text-sub); font-size: 0.8rem; text-transform: uppercase; }
@@ -124,14 +125,14 @@
     try {
         if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
             firebase.initializeApp(firebaseConfig);
-            db = firebase.database(); // Chuyển sang sử dụng Realtime Database
+            db = firebase.database();
         }
     } catch (e) {
         console.error("Lỗi cấu hình Firebase khởi tạo:", e);
     }
 
     // Danh sách tài khoản
-    const ACCOUNTS = [
+     const ACCOUNTS = [
         { name: "Cody", wallet: "0x9b3bc1c03e5a8889e893e54950a7c31c11301b79" },
         { name: "Crystie", wallet: "0xe9add5b325d2b7f869b3a3c7b1047600a76192f7" },
         { name: "James1", wallet: "0x39fac7a74365c188c293bd9a064323b50e63cde7" },
@@ -147,10 +148,11 @@
     const REAL_API = "https://axie-bald.vercel.app/api/getPBB";
     let cachedRawData = null;
 
-    function getMostRecent10AMMilestone() {
+    // Đã đổi mốc tính toán so sánh sang đúng 10:01 hàng ngày
+    function getMostRecent1001AMMilestone() {
         const now = new Date();
         const milestone = new Date(now);
-        milestone.setHours(10, 0, 0, 0);
+        milestone.setHours(10, 1, 0, 0); // 10 giờ 01 phút 00 giây
         if (now < milestone) {
             milestone.setDate(milestone.getDate() - 1);
         }
@@ -199,7 +201,7 @@
 
         const container = document.getElementById('accounts-container');
         container.innerHTML = ''; 
-        const currentMilestone = getMostRecent10AMMilestone();
+        const currentMilestone = getMostRecent1001AMMilestone();
 
         for (let acc of ACCOUNTS) {
             const walletLower = acc.wallet.toLowerCase();
@@ -208,7 +210,6 @@
             if (playerData) {
                 const rank = playerData.rank || "N/A";
                 const bountyPoint = parseInt(playerData.score, 10) || 0; 
-                const axieScore = playerData.userProfile?.settings?.axieEcosystemStats?.axieScore || "0";
 
                 let prevScore = bountyPoint;
                 let baselineScore = bountyPoint;
@@ -227,13 +228,14 @@
                             prevScore = dbData.lastScore !== undefined ? dbData.lastScore : bountyPoint;
                             baselineScore = dbData.baselineScore !== undefined ? dbData.baselineScore : bountyPoint;
 
+                            // Nếu mốc thời gian lưu trữ khác mốc 10:01 vừa qua -> Đổi baseline chốt ngày mới
                             if (dbMilestone !== currentMilestone) {
                                 baselineScore = prevScore;
                                 dbMilestone = currentMilestone;
                             }
                         }
 
-                        // Lưu đè/Cập nhật dữ liệu lên Realtime DB
+                        // Lưu cập nhật ngược lên Realtime DB
                         await dbRef.update({
                             currentMilestone: currentMilestone,
                             lastScore: bountyPoint,
@@ -266,6 +268,7 @@
                     ? `<span style="color: var(--success); font-size: 0.75rem; font-weight: normal;">☁️ Đã đồng bộ</span>`
                     : `<span style="color: var(--danger); font-size: 0.75rem; font-weight: normal;">⚠️ Lỗi Cloud</span>`;
 
+                // Đã dọn dẹp thẻ Axie Score ở phần HTML này
                 const blockHtml = `
                     <div class="account-block">
                         <div class="account-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -278,10 +281,6 @@
                             <div class="card">
                                 <h3>Thứ hạng (Rank)</h3>
                                 <div class="value">#${rank}</div>
-                            </div>
-                            <div class="card">
-                                <h3>Axie Score</h3>
-                                <div class="value">${axieScore}</div>
                             </div>
                             <div class="card highlight">
                                 <h3>Bounty Point</h3>
