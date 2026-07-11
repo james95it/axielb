@@ -66,13 +66,33 @@
         }
         .refresh-btn:hover { background-color: var(--accent-hover); }
 
-        .status-text { text-align: center; color: var(--text-sub); font-size: 0.9rem; margin-bottom: 1.5rem; }
+        .status-text { text-align: center; color: var(--text-sub); font-size: 0.9rem; margin-bottom: 1rem; }
+        
+        /* CSS cho thanh thông báo nhắc nhở cày điểm ở phía trên */
+        .warning-banner {
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid var(--danger);
+            color: #fca5a5;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }
+
         .accounts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem; }
-        .account-block { background-color: var(--block-bg); padding: 1.5rem; border-radius: 12px; border: 1px solid #334155; }
+        .account-block { background-color: var(--block-bg); padding: 1.5rem; border-radius: 12px; border: 1px solid #334155; transition: all 0.3s ease; }
+        
+        /* Class bôi đỏ thẻ khi chưa cày điểm */
+        .account-block.lazy-alert {
+            border-color: var(--danger);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+            background-color: #1a131b;
+        }
+
         .account-title { font-size: 1.3rem; font-weight: bold; color: var(--accent); margin-bottom: 2px; }
         .account-wallet { font-family: monospace; font-size: 0.8rem; color: var(--text-sub); margin-bottom: 1.5rem; word-break: break-all; }
         
-        /* Đã chỉnh lại từ 3 cột thành 2 cột cho cân đối */
         .stats-subgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
         .card { background-color: #243147; padding: 1rem; border-radius: 8px; text-align: center; display: flex; flex-direction: column; justify-content: center; }
         .card.highlight { border: 1px solid var(--accent); background-color: rgba(56, 189, 248, 0.03); }
@@ -99,6 +119,10 @@
     </div>
 
     <div id="update-status" class="status-text">Đang khởi tạo...</div>
+    
+    <!-- Vùng thông báo ví chưa cày điểm (Mặc định ẩn, xuất hiện khi có ví lười) -->
+    <div id="warning-banner" class="warning-banner" style="display: none;"></div>
+
     <div id="loading-state" class="loading">🔄 Đang tải dữ liệu thực tế...</div>
     <div id="error-state" class="error" style="display: none;">⚠️ Cần cấu hình thông tin Firebase Config chính xác trong mã nguồn.</div>
 
@@ -132,7 +156,7 @@
     }
 
     // Danh sách tài khoản
-     const ACCOUNTS = [
+    const ACCOUNTS = [
         { name: "Cody", wallet: "0x9b3bc1c03e5a8889e893e54950a7c31c11301b79" },
         { name: "Crystie", wallet: "0xe9add5b325d2b7f869b3a3c7b1047600a76192f7" },
         { name: "James1", wallet: "0x39fac7a74365c188c293bd9a064323b50e63cde7" },
@@ -148,11 +172,11 @@
     const REAL_API = "https://axie-bald.vercel.app/api/getPBB";
     let cachedRawData = null;
 
-    // Đã đổi mốc tính toán so sánh sang đúng 10:01 hàng ngày
+    // Mốc thời gian chốt điểm cố định: 10:01 sáng hàng ngày
     function getMostRecent1001AMMilestone() {
         const now = new Date();
         const milestone = new Date(now);
-        milestone.setHours(10, 1, 0, 0); // 10 giờ 01 phút 00 giây
+        milestone.setHours(10, 1, 0, 0); 
         if (now < milestone) {
             milestone.setDate(milestone.getDate() - 1);
         }
@@ -190,6 +214,7 @@
     async function updateDashboard() {
         document.getElementById('loading-state').style.display = 'block';
         document.getElementById('error-state').style.display = 'none';
+        document.getElementById('warning-banner').style.display = 'none'; // Ẩn banner khi đang tải lại
         
         cachedRawData = await fetchRawDataWithFallback();
         if (!cachedRawData) {
@@ -202,6 +227,9 @@
         const container = document.getElementById('accounts-container');
         container.innerHTML = ''; 
         const currentMilestone = getMostRecent1001AMMilestone();
+        
+        // Mảng lưu tên các tài khoản chưa cày điểm hôm nay
+        let idleAccounts = [];
 
         for (let acc of ACCOUNTS) {
             const walletLower = acc.wallet.toLowerCase();
@@ -228,14 +256,13 @@
                             prevScore = dbData.lastScore !== undefined ? dbData.lastScore : bountyPoint;
                             baselineScore = dbData.baselineScore !== undefined ? dbData.baselineScore : bountyPoint;
 
-                            // Nếu mốc thời gian lưu trữ khác mốc 10:01 vừa qua -> Đổi baseline chốt ngày mới
                             if (dbMilestone !== currentMilestone) {
                                 baselineScore = prevScore;
                                 dbMilestone = currentMilestone;
                             }
                         }
 
-                        // Lưu cập nhật ngược lên Realtime DB
+                        // Ghi ngược dữ liệu lên đám mây
                         await dbRef.update({
                             currentMilestone: currentMilestone,
                             lastScore: bountyPoint,
@@ -251,6 +278,12 @@
 
                 const sessionDiff = bountyPoint - prevScore;
                 const todayDiff = bountyPoint - baselineScore;
+
+                // Kiểm tra xem ví đã cộng điểm nào kể từ 10:01 chưa
+                const isLazy = todayDiff <= 0;
+                if (isLazy) {
+                    idleAccounts.push(acc.name);
+                }
 
                 let sessionText = `<span class="diff-line" style="color: var(--text-sub);">🔄 Vừa bấm: Không đổi</span>`;
                 if (sessionDiff > 0) {
@@ -268,11 +301,11 @@
                     ? `<span style="color: var(--success); font-size: 0.75rem; font-weight: normal;">☁️ Đã đồng bộ</span>`
                     : `<span style="color: var(--danger); font-size: 0.75rem; font-weight: normal;">⚠️ Lỗi Cloud</span>`;
 
-                // Đã dọn dẹp thẻ Axie Score ở phần HTML này
+                // Tự động thêm class "lazy-alert" bôi đỏ nếu tài khoản chưa tăng điểm
                 const blockHtml = `
-                    <div class="account-block">
+                    <div class="account-block ${isLazy ? 'lazy-alert' : ''}">
                         <div class="account-title" style="display: flex; justify-content: space-between; align-items: center;">
-                            <span>Tài khoản: ${acc.name}</span>
+                            <span>Tài khoản: ${acc.name} ${isLazy ? '⚠️' : ''}</span>
                             ${cloudBadge}
                         </div>
                         <div class="account-wallet">${acc.wallet}</div>
@@ -282,9 +315,9 @@
                                 <h3>Thứ hạng (Rank)</h3>
                                 <div class="value">#${rank}</div>
                             </div>
-                            <div class="card highlight">
+                            <div class="card highlight" style="${isLazy ? 'border-color: var(--danger);' : ''}">
                                 <h3>Bounty Point</h3>
-                                <div class="value" style="color: var(--accent);">${bountyPoint}</div>
+                                <div class="value" style="color: ${isLazy ? 'var(--danger)' : 'var(--accent)'};">${bountyPoint}</div>
                                 <div class="diff-container">
                                     ${sessionText}
                                     ${todayText}
@@ -303,6 +336,15 @@
                     </div>
                 `;
             }
+        }
+
+        // Kiểm tra và hiển thị danh sách cảnh báo lên phía trên web
+        const banner = document.getElementById('warning-banner');
+        if (idleAccounts.length > 0) {
+            banner.innerHTML = `⚠️ <strong>Cảnh báo hôm nay:</strong> Tài khoản [ <span style="color: #fff; font-weight: bold;">${idleAccounts.join(', ')}</span> ] chưa cày điểm trong hôm nay! (Tính từ mốc 10:01 sáng)`;
+            banner.style.display = 'block';
+        } else {
+            banner.style.display = 'none';
         }
 
         document.getElementById('loading-state').style.display = 'none';
