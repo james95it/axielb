@@ -190,35 +190,58 @@
         return null;
     }
 
-    // Tự động thử API Trực tiếp + 3 Cổng Proxy vượt rào CORS
+    // Hàm lấy dữ liệu nâng cao - Vượt rào CORS & Firewall mạng
     async function fetchRawDataWithFallback() {
-        const connectionEndpoints = [
-            { name: "API Trực tiếp", url: REAL_API },
-            { name: "Proxy 1 (Corsproxy)", url: "https://corsproxy.io/?" + encodeURIComponent(REAL_API) },
-            { name: "Proxy 2 (Allorigins Raw)", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(REAL_API)}` },
-            { name: "Proxy 3 (Thingproxy)", url: `https://thingproxy.freeboard.io/fetch/${REAL_API}` }
+        const targetUrl = REAL_API;
+
+        const proxyServices = [
+            // 1. AllOrigins JSON Wrapper (Mã hóa gói dữ liệu thành văn bản, vượt Firewall & CORS)
+            {
+                name: "AllOrigins Wrapper",
+                execute: async () => {
+                    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&ts=${Date.now()}`);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const wrapper = await res.json();
+                    return typeof wrapper.contents === 'string' ? JSON.parse(wrapper.contents) : wrapper.contents;
+                }
+            },
+            // 2. CodeTabs Proxy
+            {
+                name: "CodeTabs Proxy",
+                execute: async () => {
+                    const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.json();
+                }
+            },
+            // 3. Afeld CORS Proxy
+            {
+                name: "Afeld Proxy",
+                execute: async () => {
+                    const res = await fetch(`https://jsonp.afeld.me/?url=${encodeURIComponent(targetUrl)}`);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.json();
+                }
+            }
         ];
 
-        for (let endpoint of connectionEndpoints) {
+        for (let proxy of proxyServices) {
             try {
-                console.log(`📡 Thử tải từ: ${endpoint.name}...`);
-                const response = await fetch(endpoint.url, { cache: "no-store" });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                console.log(`📡 Đang kết nối qua: ${proxy.name}...`);
+                const data = await proxy.execute();
+                if (data) {
+                    console.log(`✅ Lấy dữ liệu thành công từ: ${proxy.name}`);
+                    return data;
                 }
-                
-                const data = await response.json();
-                console.log(`✅ Lấy dữ liệu thành công từ: ${endpoint.name}`);
-                return data; 
             } catch (err) {
-                console.warn(`❌ ${endpoint.name} không khả dụng:`, err.message);
+                console.warn(`❌ ${proxy.name} không khả dụng:`, err.message);
             }
         }
+
         return null;
     }
 
-    // Xử lý từng tài khoản
+    // Xử lý song song dữ liệu từng tài khoản
     async function processAccount(acc, cachedRawData, currentMilestone) {
         const walletLower = acc.wallet.toLowerCase();
         const playerData = findWalletDeep(cachedRawData, acc.wallet);
@@ -325,7 +348,7 @@
         if (!cachedRawData) {
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('error-state').style.display = 'block';
-            document.getElementById('error-state').innerText = "❌ Lỗi: Tất cả các đường truyền API/Proxy đều không phản hồi. Hãy thử bấm Làm Mới lại.";
+            document.getElementById('error-state').innerText = "❌ Lỗi: Tất cả các cổng vượt rào API đều không phản hồi. Hãy thử bấm Làm Mới lại.";
             document.getElementById('update-status').innerText = "Cập nhật thất bại";
             refreshBtn.disabled = false;
             refreshBtn.style.opacity = '1';
@@ -334,7 +357,7 @@
 
         const currentMilestone = getMostRecent1001AMMilestone();
         
-        // Tải dữ liệu các ví cùng lúc
+        // Chạy đồng thời tất cả tài khoản
         const results = await Promise.all(
             ACCOUNTS.map(acc => processAccount(acc, cachedRawData, currentMilestone))
         );
@@ -349,10 +372,10 @@
             }
         });
 
-        // Vẽ giao diện 1 lần
+        // Cập nhật DOM 1 lần duy nhất
         document.getElementById('accounts-container').innerHTML = finalHtml;
 
-        // Banner cảnh báo
+        // Cập nhật Banner cảnh báo
         const banner = document.getElementById('warning-banner');
         if (idleAccounts.length > 0) {
             banner.innerHTML = `⚠️ <strong>Cảnh báo hôm nay:</strong> Tài khoản [ <span style="color: #fff; font-weight: bold;">${idleAccounts.join(', ')}</span> ] chưa cày điểm trong hôm nay! (Tính từ mốc 10:01 sáng)`;
