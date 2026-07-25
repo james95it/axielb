@@ -33,6 +33,85 @@
             padding: 20px;
             box-sizing: border-box;
         }
+
+        /* Styles cho Màn hình Đăng nhập */
+        .login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(15, 23, 42, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            backdrop-filter: blur(8px);
+        }
+        .login-box {
+            background-color: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 16px;
+            border: 1px solid #334155;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 380px;
+            text-align: center;
+        }
+        .login-box h2 {
+            margin-top: 0;
+            color: var(--accent);
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .login-box p {
+            color: var(--text-sub);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 12px 15px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background-color: var(--block-bg);
+            color: var(--text-main);
+            font-size: 1rem;
+            box-sizing: border-box;
+            margin-bottom: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .login-box input:focus {
+            border-color: var(--accent);
+        }
+        .login-box button {
+            width: 100%;
+            background-color: var(--accent);
+            color: #0f172a;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .login-box button:hover {
+            background-color: var(--accent-hover);
+        }
+        .login-box button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .login-error {
+            color: var(--danger);
+            font-size: 0.85rem;
+            margin-top: 10px;
+            display: none;
+        }
+
+        /* Styles cho Dashboard */
         .dashboard {
             background-color: var(--card-bg);
             padding: 2rem;
@@ -53,18 +132,31 @@
         }
         .header h1 { margin: 0; color: var(--accent); font-size: 1.8rem; }
         
-        .refresh-btn {
-            background-color: var(--accent);
-            color: #0f172a;
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .refresh-btn, .logout-btn {
             border: none;
-            padding: 10px 20px;
+            padding: 10px 18px;
             border-radius: 8px;
-            font-size: 1rem;
+            font-size: 0.95rem;
             font-weight: bold;
             cursor: pointer;
             transition: all 0.2s;
         }
+        .refresh-btn {
+            background-color: var(--accent);
+            color: #0f172a;
+        }
         .refresh-btn:hover { background-color: var(--accent-hover); }
+        
+        .logout-btn {
+            background-color: #334155;
+            color: var(--text-main);
+        }
+        .logout-btn:hover { background-color: #475569; }
 
         .status-text { text-align: center; color: var(--text-sub); font-size: 0.9rem; margin-bottom: 1rem; }
         
@@ -110,10 +202,27 @@
 </head>
 <body>
 
-<div class="dashboard">
+<!-- MÀN HÌNH ĐĂNG NHẬP -->
+<div id="login-overlay" class="login-overlay">
+    <div class="login-box">
+        <h2>🔒 Khóa Bảo Vệ Firebase</h2>
+        <p>Xác thực qua Firebase Realtime Database</p>
+        <form id="login-form" onsubmit="handleLogin(event)">
+            <input type="password" id="password-input" placeholder="Nhập mật khẩu truy cập..." required autofocus />
+            <button type="submit" id="login-btn">Đăng nhập</button>
+        </form>
+        <div id="login-error" class="login-error">❌ Mật khẩu không chính xác!</div>
+    </div>
+</div>
+
+<!-- DASHBOARD CHÍNH (MẶC ĐỊNH ẨN) -->
+<div class="dashboard" id="main-dashboard" style="display: none;">
     <div class="header">
         <h1>Giám Sát Điểm Axie Bounty (Realtime DB Sync)</h1>
-        <button id="refresh-btn" class="refresh-btn">🔄 Làm mới điểm số</button>
+        <div class="header-actions">
+            <button id="refresh-btn" class="refresh-btn">🔄 Làm mới</button>
+            <button id="logout-btn" class="logout-btn" onclick="handleLogout()">🔒 Đăng xuất</button>
+        </div>
     </div>
 
     <div id="update-status" class="status-text">Đang khởi tạo...</div>
@@ -152,6 +261,66 @@
         console.error("Lỗi cấu hình Firebase khởi tạo:", e);
     }
 
+    // ===================================================
+    // 2. XÁC THỰC MẬT KHẨU BẰNG FIREBASE (KHÔNG DÙNG LOCALSTORAGE)
+    // ===================================================
+    let isAuthenticated = false;
+
+    async function handleLogin(e) {
+        e.preventDefault();
+        const inputVal = document.getElementById('password-input').value.trim();
+        const errorEl = document.getElementById('login-error');
+        const submitBtn = document.getElementById('login-btn');
+
+        if (!db) {
+            errorEl.innerText = "❌ Lỗi: Không thể kết nối Firebase Database!";
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerText = "⏳ Đang xác thực...";
+        errorEl.style.display = 'none';
+
+        try {
+            // Lấy mật khẩu lưu từ node 'access_password' trên Firebase Realtime DB
+            const snapshot = await db.ref('access_password').once('value');
+            const realPassword = snapshot.val();
+
+            if (realPassword !== null && String(inputVal) === String(realPassword)) {
+                isAuthenticated = true;
+                showDashboard();
+            } else {
+                errorEl.innerText = "❌ Mật khẩu không chính xác!";
+                errorEl.style.display = 'block';
+                document.getElementById('password-input').value = '';
+            }
+        } catch (err) {
+            console.error("Lỗi xác thực Firebase:", err);
+            errorEl.innerText = "⚠️ Không thể kiểm tra mật khẩu từ Firebase Database.";
+            errorEl.style.display = 'block';
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Đăng nhập";
+        }
+    }
+
+    function handleLogout() {
+        isAuthenticated = false;
+        document.getElementById('main-dashboard').style.display = 'none';
+        document.getElementById('login-overlay').style.display = 'flex';
+        document.getElementById('password-input').value = '';
+    }
+
+    function showDashboard() {
+        document.getElementById('login-overlay').style.display = 'none';
+        document.getElementById('main-dashboard').style.display = 'block';
+        updateDashboard();
+    }
+
+    // ===================================================
+    // 3. CẤU HÌNH TÀI KHOẢN VÀ API
+    // ===================================================
     const ACCOUNTS = [
         { name: "Cody", wallet: "0xB560DE556Cf8724aa479121139B8e7EE1Dc8447F" },
         { name: "Crystie", wallet: "0x5B842258fC785E3C8b5d17a150FB8a9Fdce26593" },
@@ -166,7 +335,6 @@
         { name: "Nezuko", wallet: "0x3E57FcF62E7655770cA45bc3Aabf5344d9560c65" },
     ];
 
-    // Link Cloudflare Worker riêng của bạn
     const REAL_API = "https://axie-proxy.vuthanhtunghp1995.workers.dev";
 
     function getMostRecent1001AMMilestone() {
@@ -191,10 +359,9 @@
         return null;
     }
 
-    // Tải dữ liệu trực tiếp từ Cloudflare Worker cá nhân
     async function fetchRawDataWithFallback() {
         try {
-            console.log("📡 Đang tải dữ liệu từ Cloudflare Worker cá nhân...");
+            console.log("📡 Đang tải dữ liệu từ Cloudflare Worker...");
             const response = await fetch(REAL_API, { cache: "no-store" });
             
             if (!response.ok) {
@@ -202,7 +369,7 @@
             }
             
             const data = await response.json();
-            console.log("✅ Lấy dữ liệu từ Cloudflare Worker thành công!");
+            console.log("✅ Lấy dữ liệu thành công!");
             return data;
         } catch (err) {
             console.error("❌ Lỗi kết nối Cloudflare Worker:", err.message);
@@ -210,7 +377,6 @@
         }
     }
 
-    // Xử lý dữ liệu từng tài khoản
     async function processAccount(acc, cachedRawData, currentMilestone) {
         const walletLower = acc.wallet.toLowerCase();
         const playerData = findWalletDeep(cachedRawData, acc.wallet);
@@ -304,6 +470,8 @@
     }
 
     async function updateDashboard() {
+        if (!isAuthenticated) return;
+
         const refreshBtn = document.getElementById('refresh-btn');
         refreshBtn.disabled = true;
         refreshBtn.style.opacity = '0.5';
@@ -326,7 +494,6 @@
 
         const currentMilestone = getMostRecent1001AMMilestone();
         
-        // Tải dữ liệu các ví song song cùng lúc
         const results = await Promise.all(
             ACCOUNTS.map(acc => processAccount(acc, cachedRawData, currentMilestone))
         );
@@ -341,10 +508,8 @@
             }
         });
 
-        // Vẽ lại giao diện 1 lần duy nhất
         document.getElementById('accounts-container').innerHTML = finalHtml;
 
-        // Cập nhật Banner cảnh báo tài khoản chưa cày điểm
         const banner = document.getElementById('warning-banner');
         if (idleAccounts.length > 0) {
             banner.innerHTML = `⚠️ <strong>Cảnh báo hôm nay:</strong> Tài khoản [ <span style="color: #fff; font-weight: bold;">${idleAccounts.join(', ')}</span> ] chưa cày điểm trong hôm nay! (Tính từ mốc 10:01 sáng)`;
@@ -361,7 +526,6 @@
     }
 
     document.getElementById('refresh-btn').addEventListener('click', updateDashboard);
-    updateDashboard();
 </script>
 
 </body>
